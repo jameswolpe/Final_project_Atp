@@ -137,8 +137,7 @@ NK_NB_match_data6 <- NK_NB_match_data6 %>%
 # classify a shot as a character followed by a digit
 shot <- "([:alpha:]?=[:digit:]+)"
 
-# This isnt working
-source("~/Downloads/james_strings.R")
+source("~/Desktop/Final_project_Atp/james_strings.R")
 
 vals <- strsplit_keep(NK_NB_match_data6$points, "[fbrsvzopuylmhijkt]", type = "before")
 vals1 <- map_df(vals, ~data.frame(value = .x), .id = "id")
