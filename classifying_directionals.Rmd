@@ -1,0 +1,298 @@
+---
+title: "Classifying Directionals"
+author: "James Wolpe"
+date: "5/16/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+```
+
+# Notes on Coding
+
+## Serves
+Direction: 4 = out wide, 5 = body, and 6 = down the T.
+
+## Rally Sequence
+f = forehand
+b = backhand
+
+r = forehand slice (including defensive chips, but not drop shots)
+s = backhand slice (including defensive chips, but not drop shots)
+
+## Direction
+1 = to a right-hander's forehand side
+2 = down the middle of the court (middle 40% of the court)
+3 = to a right-hander's backhand side
+
+## Exceptions (For now deleting if any occur)
+### Serves
++ is used for serve and volley
+* is used for ace serves
+# is used for unreturnable serves (same as forced error)
+@ is used for unforced errors
+0 is used on serve if the location is not known
+c is used for let serves
+
+### Rally sequence
+v = forehand volley
+z = backhand volley
+(see below for an optional additional code to indicate a stop volley/drop volley)
+
+o = standard overhead/smash
+p = "backhand" overhead/smash
+
+u = forehand drop shot
+y = backhand drop shot
+
+l = forehand lob
+m = backhand lob
+
+h = forehand half-volley
+i = backhand half-volley
+
+j = forehand swinging volley
+k = backhand swinging volley
+
+t = all trick shots, including behind-the-back, between-the-legs, and "tweeners."
+
+q = any unknown shot
+
+### Direction
+0 = unknown direction
+
+```{r}
+# read in the full data set
+points_data <- read_csv("data/charting-m-points.csv")
+match_data <- read_csv("data/charting-m-matches.csv")
+
+#Filter to players with a certain number of 
+matchdata1 <- match_data %>% pivot_longer(cols = c(`Player 1`, `Player 2`),
+                                          names_to = "Name",
+                                          values_to = "Player") %>%
+  group_by(Player) %>% count() %>% ungroup()%>%
+  filter(n >= 20) 
+
+combined_left <- left_join(points_data, match_data, by = c("match_id" = "match_id"))
+# merge to get players height in the data set
+atp_players <- read_csv("data/atp_players.csv")
+# Will have to unite the players in this data set by first and last name and either only look at the winner of each match or pivot longer (code from the atp shiny app) to compare height of players over the years.
+
+
+```
+
+
+```{r}
+NK_NB_match_data<- combined_left %>% 
+  # making the data set easier to work with by only selecting one match
+  filter(match_id == "20220310-M-Indian_Wells_Masters-R128-Sebastian_Baez-Nick_Kyrgios") 
+
+NK_NB_match_data2 <- NK_NB_match_data %>% 
+  select(c( Pt, `1st`, `2nd`, `2ndSV`,isForced, isUnforced, PtWinner, rallyCount, match_id, isAce, isDouble, Svr, Ret, Serving,)) 
+
+NK_NB_match_data2 <- combined_left %>%
+  rename(FirstServe = `1st`,
+         SecondServe = `2nd`,
+         SecondServeTF = `2ndSV`) 
+
+# Get the right columns
+NK_NB_match_data3 <- NK_NB_match_data2 %>%
+  mutate(Point = if_else(is.na(SecondServeTF), 
+          true = FirstServe,
+          false = NA_character_)) %>% 
+  unite(points, Point, SecondServe, na.rm = TRUE) %>% 
+  select(-FirstServe, -SecondServeTF)
+
+# Filter Aces, double faults, and forced errors off the first serve
+ NK_NB_match_data4 <- NK_NB_match_data3 %>% 
+  filter(isAce == FALSE,
+         isDouble == FALSE) %>%
+  select(-isDouble, -isAce)
+   
+ NK_NB_match_data5 <-  NK_NB_match_data4 %>%
+   #Need an and and an or to keep rally count > 1 and forced is false
+  filter(rallyCount != 1 | rallyCount == 1 & isForced == FALSE) 
+
+  #filter points with unknown shots
+  # Filtered any serves with unknown direction
+ # Filter points that don;t have direction and depth a number followed by two digits.
+ # filter volleys(v,z), smashes(o,p), swinging volleys(i,k), net cords(;), and approach shots(+), serve shanks(!)
+NK_NB_match_data6 <- NK_NB_match_data5 %>%
+  filter(str_detect(string = points, pattern = "^[456][456(?=[:alpha:]?=[123]]"))
+
+NK_NB_match_data6 <- NK_NB_match_data6 %>%
+  filter(str_detect(string = points, pattern ="([:symbol:])") == FALSE,
+         str_detect(string = points, pattern ="[jmhuylvzopik;t!-]") == FALSE)
+```
+
+
+```{r}
+# classify a shot as a character followed by a digit
+shot <- "([:alpha:]?=[:digit:]+)"
+
+# This isnt working
+source("~/Downloads/james_strings.R")
+
+vals <- strsplit_keep(NK_NB_match_data6$points, "[fbrsvzopuylmhijkt]", type = "before")
+vals1 <- map_df(vals, ~data.frame(value = .x), .id = "id")
+
+
+merge1 <- vals1 %>% group_by(id) %>%
+  mutate(shot_num = row_number())
+
+merge2 <- merge1 %>% pivot_wider(names_from = shot_num,
+                       values_from = value)
+
+plength <- ncol(merge2)
+
+merge3 <- bind_cols(merge2, NK_NB_match_data6) %>%
+  pivot_longer(cols = c(2:all_of(plength)),
+               names_to = "shot_in_seq",
+               values_to = "shot") %>%
+  filter(!is.na(shot))
+
+merge3$shot_in_seq <- as.numeric(merge3$shot_in_seq)
+```
+
+
+```{r}
+merge3 <- merge3 %>% mutate(player = if_else(shot_in_seq %% 2 == 1,
+                                             true = `Player 1`,
+                                             false = `Player 2`))
+# create previous shot variable
+merge3 <- merge3 %>% mutate(shot_after = lead(shot)) 
+# create ultimate shot and penultimate shot variable
+merge3 <- merge3 %>% mutate(ultimate_shot = if_else(is.na(shot_after),
+          true = TRUE,
+          false = FALSE)) %>%
+  mutate(penultimate_shot = lead(ultimate_shot))
+# create an is serve variable
+merge3 <- merge3 %>% mutate(is_serve = if_else(shot_in_seq == 1,
+                            true = TRUE,
+                            false = FALSE))
+
+#Create stroke and direction variable
+merge3 <- separate(data = merge3,
+                   col = shot,
+                   into = c("stroke", "direction"),
+                   sep=1) 
+# Create depth variable
+merge3 <- separate(data = merge3,
+                   col = direction,
+                   into = c("direction","depth"),
+                   sep=1) 
+#Create stroke and direction variable for shot_after
+merge3 <- separate(data = merge3,
+                   col = shot_after,
+                   into = c("stroke_after", "direction_after"),
+                   sep=1) 
+
+# Create depth variable for shot_after
+merge3 <- separate(data = merge3,
+                   col = direction_after,
+                   into = c("direction_after","depth_after"),
+                   sep=1)
+# Make blank Cells NA
+merge3 <- merge3 %>% mutate_all(na_if,"")
+
+# filter all cases where direction is not a number
+merge3 <-merge3 %>% filter(str_detect(string = direction_after, pattern ="[123]") == TRUE) %>% 
+  filter(str_detect(string = direction, pattern ="[123]") == TRUE)
+
+# make all backhand slices backhands
+#merge3 <- merge3 %>% mutate(stroke = if_else(stroke == "s",
+#                                            true = "b",
+#                                              false = stroke)
+#)
+#merge3 <- merge3 %>% mutate(stroke = if_else(stroke == "r",
+#                              true = "f",
+#                              false = stroke)) 
+#merge3 <- merge3 %>%
+#mutate(stroke_after = if_else(stroke_after == "r",
+ #                             true = "f",
+ #                             false = stroke_after)) 
+#merge3 <- merge3 %>% 
+#mutate(stroke_after = if_else(stroke == "s",
+#                                true = "b",
+#                                false = stroke_after))
+
+merge3 <- merge3 %>% 
+  select(Pt, player, shot_in_seq, stroke, direction, depth, stroke_after, direction_after, depth_after,  everything())
+
+```
+
+
+```{r}
+merge3 <- merge3 %>% filter(ultimate_shot == FALSE,
+                            is_serve == FALSE)
+# to be used in shiny app
+write.csv(merge3, "merge3.csv")
+```
+
+<Code from https://rpubs.com/nina_fujii/825023>
+```{r}
+#coordinates of the baseline + side line 
+#save the coordinates as a data frame as "base_side_line"
+base_side_line <- data.frame(
+  x = c(0, 0, 23.77, 23.77, 0),
+  y = c(0, 10.97, 10.97, 0, 0)
+)
+#coordinates of the service line and center line 
+#save the coordinates as a data frame as "serves_center_line"
+serves_center_line <- data.frame(
+  x = c(5.585, 5.585, 5.585, 18.385, 18.385, 18.385),
+  y = c(1.37, 9.6, 5.485, 5.485, 1.37, 9.6)
+)
+
+# create my own directional lines on the court
+court <- ggplot() +
+  geom_path(data = base_side_line, aes(x = x, y = y)) +
+  geom_path(data = serves_center_line, aes(x = x, y = y)) +
+  geom_path(aes(x = c(23.77, 0), y = c(1.37, 1.37))) + # include lower singles lines
+  geom_path(aes(x = c(23.77, 0), y = c(9.6, 9.6))) + # include upper singles lines
+  geom_path(aes(x = c(11.985, 11.985), y = c(0, 10.97))) + # include dotted net line
+  geom_path(aes(x = c(23.77, 0), y = c(3.839, 3.839)), lty = 2, color = "red") +  # my new line for the bottom directional
+  geom_path(aes(x = c(23.77, 0), y = c(7.131, 7.131)), lty = 2, color = "red") +
+  geom_point(aes(x = 22, y= 8.365), size = 3) + # right side 1 
+  geom_point(aes(x = 22, y = 5.485), size = 3) + # right side 2
+  geom_point(aes(x = 22, y = 2.604), size = 3) + # right side 3
+  geom_point(aes(x = 1.77, y= 8.365), size = 3) + # left side 3 
+  geom_point(aes(x = 1.77, y = 5.485), size = 3) + # left side 2
+  geom_point(aes(x = 1.77, y = 2.604), size = 3) + # left side 1
+  geom_point(data = court_df, aes(x = x, y = y, color = "blue"))+
+ geom_segment(aes(x = 22, y = 2.6, xend = 1.77, yend = 5.4, size = 2 *))+
+  ylim(c(-1, 11.97)) + xlim(c(-4, 27.77)) + # zoom out
+  theme_void()
+
+court
+
+direction <- c(1,2,3)
+x <- c(1.77, 1.77, 1.77)
+y <- c(2.604, 5.485, 8.365)
+court_df <- data.frame(direction, x, y)
+# make a column for what they select with the point x and y's
+# then filter depending on which they select
+```
+
+```{r}
+merge3sum <- df %>% filter(player == "Nick Kyrgios",
+                               stroke == "b",
+                               direction == 3,
+                               ultimate_shot == FALSE,
+                               stroke_after == "b") %>% 
+  mutate(ncount = n()) %>%
+  group_by(direction_after) %>%
+  summarise(count = n()) %>%
+  mutate(perc = count / sum(count),
+         n = sum(count)) 
+
+ggplot(data = merge3sum, aes(x = direction_after, y = perc*100)) +
+  geom_col()
+```
