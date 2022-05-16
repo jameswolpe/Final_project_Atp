@@ -1,0 +1,21 @@
+---
+title: "Written Discription"
+author: "James Wolpe"
+date: "5/12/2022"
+output: 
+  prettydoc::html_pretty:
+    theme: hpstr
+    toc: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+For my final project I worked with data from Jeff Sackmans crowd sourced match charting tennis project. The data set I used from this project contains point by point data manually inputted for ATP (professional men's tennis) matches. The purpose of this project was to investigate where a player might hit based on the stroke and direction of the ball hit to them. I wanted to investigate which players followed "Wardlaw Directionals", which is a basic theory of high percentage tennis. "Wardlaw Directionals" state that if the ball comes across your body, you return it from the way it came, if the ball does not cross your body you change direction.
+
+To create a visualization of this I used a shiny app. I put a plot of the court that changed based on the inputted incoming direction to help the user understand where the ball was being hit to and where the options were being hit to. Directly above that I made a bar plot that showed how often the player would hit to that spot next with the far left of the bar plot representing the left of the court, the middle representing the middle, and the right representing the right. This analyzing the direction intuitive.
+  
+I tried to follow the principal of small ink to data ratio. I also kept my plots sparce so as not to distract from the data. As I was showing each direction as a percent of the time to give the user enough information to form a conclusion I included a table that summarized the count of that direction.
+
+Future work I hope to include a table that summarizes the percentage of times a player hit a winner or an unforced error on a specific shot as this would help to see what shots a player should avoid and what shots that player should go for more often. I also hope to create a second tab that is return location and errors based on first serve location. Some limitations is that in order to make the data easier to work with I had to eliminate any points that were not exclusively baseline rallies, this limits certain players more than others and does not give a complete picture of what players do with specific shots. 
